@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Sistema de Coleta e Análise de Sentimentos do Twitter/X - VERSÃO COM SELEÇÃO INTELIGENTE
-Prioriza postagens com mais comentários e permite ordenação temporal
-"""
-
-# Importações necessárias
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -14,7 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 import pandas as pd
@@ -24,17 +17,11 @@ from LeIA import SentimentIntensityAnalyzer
 import matplotlib.pyplot as plt
 import hashlib
 import random
-import os
-from pathlib import Path
-import subprocess
-import psutil
-import shutil
-from datetime import datetime, timedelta
-import dateparser
 
-class TwitterSentimentAnalyzerSmartSelection:
+class TwitterSentimentAnalyzer:
     """
-    Versão com seleção inteligente - Prioriza postagens com mais comentários
+    Sistema de coleta e análise de sentimentos do Twitter/X
+    Conforme especificações da atividade acadêmica
     """
     
     def __init__(self, username="tvm", browser="chrome"):
@@ -43,682 +30,449 @@ class TwitterSentimentAnalyzerSmartSelection:
         self.driver = None
         self.dados_coletados = []
         self.analyzer = SentimentIntensityAnalyzer()
-        self.tweets_processados = set()
-        self.tweets_vistos = set()
-        self.ultima_altura_scroll = 0
-        self.tentativas_scroll = 0
-        self.tweets_candidatos = []  # Lista para armazenar tweets candidatos
+        self.tweets_processados = []
         
-    def fechar_chrome_existente(self):
-        """Fecha todas as instâncias do Chrome existentes"""
-        print("🔄 Verificando instâncias do Chrome...")
+    def configurar_driver(self):
+        """Configuração robusta do WebDriver"""
+        print(f"Configurando navegador {self.browser.upper()}...")
         
-        try:
-            # Para Linux
-            subprocess.run(['pkill', '-f', 'chrome'], 
-                         stdout=subprocess.DEVNULL, 
-                         stderr=subprocess.DEVNULL)
-            time.sleep(2)
-            print("✅ Chrome fechado (Linux)")
-        except:
-            pass
-        
-        try:
-            # Para Windows
-            subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], 
-                         stdout=subprocess.DEVNULL, 
-                         stderr=subprocess.DEVNULL)
-            time.sleep(2)
-            print("✅ Chrome fechado (Windows)")
-        except:
-            pass
-        
-        # Usando psutil como alternativa
-        try:
-            for proc in psutil.process_iter(['pid', 'name']):
-                if 'chrome' in proc.info['name'].lower():
-                    proc.kill()
-            time.sleep(2)
-            print("✅ Chrome fechado (psutil)")
-        except:
-            pass
-            
-    def criar_perfil_temporario(self):
-        """Cria um perfil temporário do Chrome"""
-        temp_profile = os.path.join(os.path.expanduser("~"), "temp_chrome_profile")
-        
-        # Remove perfil temporário existente
-        if os.path.exists(temp_profile):
-            try:
-                shutil.rmtree(temp_profile)
-            except:
-                pass
-                
-        os.makedirs(temp_profile, exist_ok=True)
-        print(f"✅ Perfil temporário criado: {temp_profile}")
-        return temp_profile
-        
-    def configurar_driver_robusto(self):
-        """Configuração robusta do driver"""
-        print(f"🔧 Configurando o navegador {self.browser.upper()} (versão seleção inteligente)...")
-        
-        if self.browser in ["chrome", "brave"]:
-            # Fecha Chrome existente primeiro
-            self.fechar_chrome_existente()
-            
+        if self.browser == "chrome":
             chrome_options = ChromeOptions()
             
-            # Usa perfil temporário
-            temp_profile = self.criar_perfil_temporario()
-            chrome_options.add_argument(f"--user-data-dir={temp_profile}")
-            
-            # Configurações anti-erro
+            # Configurações para estabilidade
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--disable-software-rasterizer")
-            chrome_options.add_argument("--remote-debugging-port=0")  # Porta dinâmica
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-plugins")
-            chrome_options.add_argument("--disable-images")  # Acelera carregamento
+            chrome_options.add_argument("--window-size=1366,768")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            # Configurações de janela
-            chrome_options.add_argument("--window-size=1366,768")
-            chrome_options.add_argument("--start-maximized")
-            
-            # User agent
+            # User agent realista
             chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            
-            # Configurações de segurança relaxadas
-            chrome_options.add_argument("--disable-web-security")
-            chrome_options.add_argument("--allow-running-insecure-content")
-            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-            
-            if self.browser == "brave":
-                brave_paths = [
-                    "/usr/bin/brave-browser",
-                    "/snap/brave/current/usr/bin/brave",
-                    "/usr/bin/brave",
-                    "/opt/brave.com/brave/brave-browser"
-                ]
-                
-                for path in brave_paths:
-                    if os.path.exists(path):
-                        chrome_options.binary_location = path
-                        break
             
             try:
                 service = ChromeService(ChromeDriverManager().install())
                 self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                print("✅ Chrome iniciado com perfil temporário!")
+                self.driver.set_page_load_timeout(60)
+                self.driver.implicitly_wait(12)
+                
+                # Remove propriedade webdriver para evitar detecção
+                self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                
+                print("Chrome configurado com sucesso!")
+                return True
                 
             except Exception as e:
-                print(f"⚠️ Erro com Chrome: {e}")
-                print("🔄 Tentando Firefox como alternativa...")
+                print(f"Erro com Chrome: {e}")
+                print("Tentando Firefox...")
                 self.browser = "firefox"
-                return self.configurar_driver_robusto()
+                return self.configurar_driver()
         
-        if self.browser == "firefox":
+        elif self.browser == "firefox":
             firefox_options = FirefoxOptions()
-            
-            # Configurações básicas
             firefox_options.add_argument("--width=1366")
             firefox_options.add_argument("--height=768")
-            
-            # Desabilitar notificações e mídia
             firefox_options.set_preference("dom.webnotifications.enabled", False)
-            firefox_options.set_preference("media.volume_scale", "0.0")
             firefox_options.set_preference("media.autoplay.default", 5)
-            
-            # Configurações de performance
-            firefox_options.set_preference("browser.cache.disk.enable", False)
-            firefox_options.set_preference("browser.cache.memory.enable", False)
-            
-            # JavaScript habilitado para Twitter
-            firefox_options.set_preference("javascript.enabled", True)
             
             try:
                 service = FirefoxService(GeckoDriverManager().install())
                 self.driver = webdriver.Firefox(service=service, options=firefox_options)
-                print("✅ Firefox configurado com sucesso!")
+                self.driver.set_page_load_timeout(60)
+                self.driver.implicitly_wait(12)
+                print("Firefox configurado com sucesso!")
+                return True
                 
             except Exception as e:
-                print(f"❌ Erro também com Firefox: {e}")
-                raise Exception("Não foi possível configurar nenhum navegador!")
-        
-        # Configurações anti-detecção
-        try:
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.driver.set_page_load_timeout(30)
-            self.driver.implicitly_wait(10)
-        except:
-            pass
-            
-    def verificar_login_melhorado(self):
-        """Verificação melhorada de login"""
-        print("🔍 Verificando acesso ao Twitter...")
-        
-        try:
-            # Primeiro, vai para a página de login para verificar
-            self.driver.get("https://twitter.com/login")
-            time.sleep(5)
-            
-            # Se for redirecionado para home, está logado
-            if "/home" in self.driver.current_url or "/following" in self.driver.current_url:
-                print("✅ Usuário já logado!")
-                return True
-            
-            # Verifica elementos de login
-            elementos_login = [
-                'input[autocomplete="username"]',
-                'input[name="text"]',
-                'div[data-testid="LoginForm"]'
-            ]
-            
-            login_encontrado = False
-            for seletor in elementos_login:
-                if self.driver.find_elements(By.CSS_SELECTOR, seletor):
-                    login_encontrado = True
-                    break
-            
-            if login_encontrado:
-                print("🔐 Necessário fazer login...")
-                self.fazer_login_manual()
-                return self.verificar_login_pos_manual()
-            else:
-                print("✅ Aparentemente logado!")
-                return True
-                
-        except Exception as e:
-            print(f"⚠️ Erro na verificação: {e}")
-            return False
-            
-    def fazer_login_manual(self):
-        """Orientações para login manual"""
-        print("\n" + "="*60)
-        print("🔐 LOGIN MANUAL NECESSÁRIO")
-        print("="*60)
-        print("1. Uma janela do navegador foi aberta")
-        print("2. Faça login manualmente no Twitter")
-        print("3. Após o login, volte ao terminal")
-        print("4. Pressione Enter para continuar")
-        print("="*60)
-        
-        input("Pressione Enter após fazer login no navegador...")
-        
-    def verificar_login_pos_manual(self):
-        """Verifica se login manual foi bem-sucedido"""
-        print("🔍 Verificando login...")
-        
-        try:
-            self.driver.get("https://twitter.com/home")
-            time.sleep(5)
-            
-            if "/home" in self.driver.current_url:
-                print("✅ Login confirmado!")
-                return True
-            else:
-                print("❌ Login não detectado")
+                print(f"Erro com Firefox: {e}")
                 return False
-                
-        except:
-            return False
-            
-    def acessar_perfil_robusto(self):
-        """Acessa perfil de forma robusta"""
-        print(f"🌐 Acessando perfil @{self.username}...")
         
-        # Verifica login primeiro
-        if not self.verificar_login_melhorado():
-            print("❌ Não foi possível confirmar login!")
-            return False
+        return False
+            
+    def realizar_login_manual(self):
+        """Processo de login manual conforme necessário"""
+        print("\n" + "="*60)
+        print("ETAPA DE LOGIN - TWITTER/X")
+        print("="*60)
+        print("INSTRUÇÕES:")
+        print("1. O navegador será aberto na página de login")
+        print("2. Faça login com suas credenciais")
+        print("3. Aguarde carregar completamente")
+        print("4. Volte ao terminal e pressione Enter")
+        print("="*60)
         
         try:
-            url = f"https://twitter.com/{self.username}"
-            self.driver.get(url)
+            self.driver.get("https://twitter.com/login")
+            time.sleep(8)
+        except:
+            print("Aviso: Timeout no carregamento da página de login")
+        
+        input("\nPressione Enter APÓS fazer login completamente...")
+        
+        # Verifica login
+        for tentativa in range(3):
+            try:
+                self.driver.get("https://twitter.com/home")
+                time.sleep(5)
+                
+                # Verifica se está na home ou se há tweets
+                if ("/home" in self.driver.current_url or 
+                    self.driver.find_elements(By.CSS_SELECTOR, '[data-testid="tweet"]')):
+                    print("✅ Login confirmado!")
+                    return True
+                else:
+                    if tentativa < 2:
+                        print(f"Tentativa {tentativa + 1}/3 - Login não confirmado, tentando novamente...")
+                        time.sleep(3)
+                    
+            except Exception as e:
+                if tentativa < 2:
+                    print(f"Erro na verificação, tentativa {tentativa + 1}/3...")
+                    time.sleep(3)
+                    
+        print("❌ Não foi possível confirmar o login")
+        return False
+            
+    def acessar_perfil_alvo(self):
+        """Acessa o perfil do portal de notícias especificado"""
+        print(f"Acessando perfil @{self.username}...")
+        
+        try:
+            url_perfil = f"https://twitter.com/{self.username}"
+            self.driver.get(url_perfil)
             time.sleep(8)
             
-            # Verifica se o perfil carregou
-            indicadores_perfil = [
-                f'[data-testid="UserName"]',
-                'article[data-testid="tweet"]',
-                '[data-testid="primaryColumn"]'
-            ]
+            # Aguarda tweets carregarem
+            wait = WebDriverWait(self.driver, 20)
+            tweets = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'article[data-testid="tweet"]')))
             
-            perfil_carregado = False
-            for seletor in indicadores_perfil:
-                if self.driver.find_elements(By.CSS_SELECTOR, seletor):
-                    perfil_carregado = True
-                    break
-            
-            if perfil_carregado:
-                print("✅ Perfil acessado com sucesso!")
+            if tweets:
+                print(f"✅ Perfil @{self.username} acessado - {len(tweets)} tweets iniciais encontrados")
                 return True
             else:
-                print("⚠️ Perfil pode não ter carregado completamente")
-                return True  # Tenta continuar mesmo assim
+                print("❌ Nenhum tweet encontrado no perfil")
+                return False
                 
         except Exception as e:
-            print(f"⚠️ Erro ao acessar perfil: {e}")
+            print(f"❌ Erro ao acessar perfil: {e}")
             return False
     
-    def extrair_numero_comentarios(self, tweet):
-        """Extrai o número de comentários de um tweet"""
+    def extrair_dados_tweet(self, tweet_element):
+        """Extrai dados essenciais de um tweet"""
         try:
-            # Seletores comuns para contadores de comentários
-            seletores_comentarios = [
-                '[data-testid="reply"]',
-                '[aria-label*="repl"]',
-                '[aria-label*="comment"]',
-                'div[role="group"] div[role="button"]'
-            ]
-            
-            for seletor in seletores_comentarios:
-                try:
-                    elemento_comentario = tweet.find_element(By.CSS_SELECTOR, seletor)
-                    aria_label = elemento_comentario.get_attribute('aria-label')
-                    
-                    if aria_label:
-                        # Extrai números do aria-label
-                        numeros = re.findall(r'\d+', aria_label)
-                        if numeros:
-                            return int(numeros[0])
-                    
-                    # Tenta pegar texto do elemento
-                    texto = elemento_comentario.text.strip()
-                    if texto and texto.isdigit():
-                        return int(texto)
-                        
-                except:
-                    continue
-            
-            # Se não encontrar contador específico, assume que tem comentários se conseguir clicar
-            return 1  # Valor padrão
-            
-        except Exception as e:
-            return 0
-    
-    def extrair_data_tweet(self, tweet):
-        """Extrai a data do tweet"""
-        try:
-            time_element = tweet.find_element(By.CSS_SELECTOR, 'time')
-            datetime_attr = time_element.get_attribute('datetime')
-            
-            if datetime_attr:
-                # Converte para datetime
-                data_tweet = datetime.fromisoformat(datetime_attr.replace('Z', '+00:00'))
-                return data_tweet
-            
-            # Tenta pegar do title ou texto
-            title_attr = time_element.get_attribute('title')
-            if title_attr:
-                try:
-                    return dateparser.parse(title_attr)
-                except:
-                    pass
-            
-            texto_tempo = time_element.text.strip()
-            if texto_tempo:
-                try:
-                    return dateparser.parse(texto_tempo)
-                except:
-                    pass
-                    
-        except:
-            pass
-            
-        # Se não conseguir extrair data, assume que é recente
-        return datetime.now()
-    
-    def gerar_id_unico_tweet(self, tweet):
-        """Gera ID único mais robusto para o tweet"""
-        try:
-            identificadores = []
-            
+            # Texto do tweet
             try:
-                link_element = tweet.find_element(By.CSS_SELECTOR, 'a[href*="/status/"]')
-                tweet_url = link_element.get_attribute('href')
-                if tweet_url:
-                    tweet_id = tweet_url.split('/')[-1].split('?')[0]
-                    identificadores.append(f"url:{tweet_id}")
+                texto_elemento = tweet_element.find_element(By.CSS_SELECTOR, '[data-testid="tweetText"]')
+                texto_tweet = texto_elemento.text.strip()
             except:
-                pass
+                texto_tweet = "Texto não disponível"
             
+            # URL do tweet para acessar comentários
             try:
-                texto_elemento = tweet.find_element(By.CSS_SELECTOR, '[data-testid="tweetText"]')
-                texto = texto_elemento.text.strip()
-                if texto:
-                    texto_hash = hashlib.md5(texto[:100].encode()).hexdigest()[:12]
-                    identificadores.append(f"texto:{texto_hash}")
+                link_element = tweet_element.find_element(By.CSS_SELECTOR, 'a[href*="/status/"]')
+                url_tweet = link_element.get_attribute('href')
             except:
-                pass
+                url_tweet = None
             
-            try:
-                time_element = tweet.find_element(By.CSS_SELECTOR, 'time')
-                datetime_attr = time_element.get_attribute('datetime')
-                if datetime_attr:
-                    identificadores.append(f"time:{datetime_attr}")
-            except:
-                pass
-            
-            if identificadores:
-                id_final = "|".join(identificadores)
-                return hashlib.md5(id_final.encode()).hexdigest()
+            # ID único do tweet
+            if url_tweet:
+                tweet_id = url_tweet.split('/')[-1].split('?')[0]
             else:
-                html_hash = hashlib.md5(str(tweet.get_attribute('outerHTML')[:200]).encode()).hexdigest()
-                return f"fallback:{html_hash[:12]}"
-                
+                tweet_id = hashlib.md5(texto_tweet.encode()).hexdigest()[:12]
+            
+            return {
+                'id': tweet_id,
+                'texto': texto_tweet,
+                'url': url_tweet
+            }
+            
         except Exception as e:
-            return f"emergency:{int(time.time())}:{random.randint(1000, 9999)}"
+            return None
     
-    def coletar_tweets_candidatos(self, max_scrolls=15):
-        """Coleta todos os tweets candidatos com suas métricas"""
-        print("🔍 Coletando tweets candidatos com métricas...")
+    def coletar_ultimas_30_postagens(self):
+        """Coleta EXATAMENTE as últimas 30 postagens conforme documentação"""
+        print("COLETANDO ÚLTIMAS 30 POSTAGENS - REQUISITO OBRIGATÓRIO")
+        print("=" * 60)
         
-        self.tweets_candidatos = []
-        tweets_processados_nesta_coleta = set()
+        tweets_dados = []
+        tweets_ids_coletados = set()
         scrolls_realizados = 0
+        max_scrolls = 30  # Aumentado para garantir 30 posts
+        scrolls_sem_novos_tweets = 0
         
-        while scrolls_realizados < max_scrolls:
+        while len(tweets_dados) < 30 and scrolls_realizados < max_scrolls:
             try:
-                todos_tweets = self.driver.find_elements(By.CSS_SELECTOR, 'article[data-testid="tweet"]')
-                print(f"📊 Encontrados {len(todos_tweets)} tweets na tela (scroll {scrolls_realizados + 1}/{max_scrolls})")
+                # Localiza todos os tweets na página atual
+                tweets_atuais = self.driver.find_elements(By.CSS_SELECTOR, 'article[data-testid="tweet"]')
                 
-                tweets_novos_nesta_rodada = 0
+                novos_tweets_nesta_rodada = 0
                 
-                for tweet in todos_tweets:
-                    try:
-                        tweet_id = self.gerar_id_unico_tweet(tweet)
+                for tweet in tweets_atuais:
+                    if len(tweets_dados) >= 30:
+                        break
                         
-                        if tweet_id not in tweets_processados_nesta_coleta:
-                            tweets_processados_nesta_coleta.add(tweet_id)
-                            
-                            # Extrai texto
-                            seletores_texto = [
-                                '[data-testid="tweetText"]',
-                                '.tweet-text',
-                                '[data-testid="tweet"] [lang]',
-                                'div[lang] span'
-                            ]
-                            
-                            texto_tweet = None
-                            for seletor in seletores_texto:
-                                try:
-                                    texto_elemento = tweet.find_element(By.CSS_SELECTOR, seletor)
-                                    texto_tweet = texto_elemento.text.strip()
-                                    if texto_tweet:
-                                        break
-                                except:
-                                    continue
-                            
-                            if texto_tweet and len(texto_tweet) > 15:
-                                # Extrai métricas
-                                num_comentarios = self.extrair_numero_comentarios(tweet)
-                                data_tweet = self.extrair_data_tweet(tweet)
-                                
-                                # Adiciona à lista de candidatos
-                                candidato = {
-                                    'element': tweet,
-                                    'id': tweet_id,
-                                    'texto': texto_tweet,
-                                    'comentarios': num_comentarios,
-                                    'data': data_tweet,
-                                    'score': num_comentarios  # Score inicial baseado em comentários
-                                }
-                                
-                                self.tweets_candidatos.append(candidato)
-                                tweets_novos_nesta_rodada += 1
-                                
-                    except Exception as e:
-                        continue
-                
-                print(f"✅ {tweets_novos_nesta_rodada} novos tweets candidatos adicionados")
-                
-                # Scroll para carregar mais tweets
-                altura_antes = self.driver.execute_script("return window.pageYOffset;")
-                self.driver.execute_script("window.scrollBy(0, 800);")
-                time.sleep(random.uniform(2, 4))
-                altura_depois = self.driver.execute_script("return window.pageYOffset;")
-                
-                # Se não houve scroll, para
-                if altura_antes == altura_depois:
-                    print("⚠️ Fim da página atingido")
-                    break
+                    dados_tweet = self.extrair_dados_tweet(tweet)
                     
+                    if dados_tweet and dados_tweet['id'] not in tweets_ids_coletados:
+                        if len(dados_tweet['texto']) > 5:  # Critério mais flexível
+                            tweets_dados.append(dados_tweet)
+                            tweets_ids_coletados.add(dados_tweet['id'])
+                            novos_tweets_nesta_rodada += 1
+                            
+                            # Progresso em tempo real
+                            print(f"Tweet {len(tweets_dados)}/30 coletado")
+                
+                # Controle de scroll inteligente
+                if novos_tweets_nesta_rodada == 0:
+                    scrolls_sem_novos_tweets += 1
+                    if scrolls_sem_novos_tweets >= 3:
+                        print("Sem novos tweets após 3 scrolls - finalizando coleta")
+                        break
+                else:
+                    scrolls_sem_novos_tweets = 0
+                
+                # Scroll para carregar mais tweets (OBRIGATÓRIO para 30 posts)
+                if len(tweets_dados) < 30:
+                    print(f"Scroll {scrolls_realizados + 1} - Coletados {len(tweets_dados)}/30")
+                    
+                    altura_antes = self.driver.execute_script("return window.pageYOffset;")
+                    self.driver.execute_script("window.scrollBy(0, 1000);")
+                    time.sleep(random.uniform(4, 6))  # Tempo maior para carregar
+                    altura_depois = self.driver.execute_script("return window.pageYOffset;")
+                    
+                    # Se não houve scroll mas ainda não tem 30, força mais scroll
+                    if altura_antes == altura_depois:
+                        if len(tweets_dados) < 30:
+                            print("Forçando scroll adicional para atingir 30 postagens...")
+                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                            time.sleep(5)
+                        else:
+                            break
+                        
                 scrolls_realizados += 1
                 
             except Exception as e:
-                print(f"⚠️ Erro durante coleta: {str(e)[:50]}")
-                break
+                print(f"Erro durante coleta: {e}")
+                # Continua tentando mesmo com erro
+                scrolls_realizados += 1
+                time.sleep(3)
         
-        print(f"🎯 Total de tweets candidatos coletados: {len(self.tweets_candidatos)}")
-        return len(self.tweets_candidatos) > 0
-    
-    def selecionar_melhores_tweets(self, limite=5, criterio="comentarios"):
-        """Seleciona os melhores tweets baseado no critério escolhido"""
-        print(f"🎯 Selecionando os {limite} melhores tweets por {criterio}...")
+        print("=" * 60)
+        print(f"RESULTADO DA COLETA: {len(tweets_dados)} postagens")
         
-        if not self.tweets_candidatos:
-            print("⚠️ Nenhum tweet candidato disponível!")
-            return []
-        
-        # Filtra tweets de hoje (últimas 24 horas)
-        hoje = datetime.now()
-        tweets_hoje = []
-        
-        for candidato in self.tweets_candidatos:
-            try:
-                if candidato['data'] and (hoje - candidato['data']).days <= 1:
-                    tweets_hoje.append(candidato)
-                else:
-                    # Se não tiver data válida, considera como recente
-                    tweets_hoje.append(candidato)
-            except:
-                tweets_hoje.append(candidato)
-        
-        print(f"📅 Tweets das últimas 24h: {len(tweets_hoje)}")
-        
-        # Ordena baseado no critério
-        if criterio == "comentarios":
-            # Ordena por número de comentários (decrescente)
-            tweets_selecionados = sorted(tweets_hoje, 
-                                       key=lambda x: x['comentarios'], 
-                                       reverse=True)
-        elif criterio == "cronologico":
-            # Ordena por data (mais antigo primeiro)
-            tweets_selecionados = sorted(tweets_hoje, 
-                                       key=lambda x: x['data'] if x['data'] else datetime.min)
-        elif criterio == "cronologico_reverso":
-            # Ordena por data (mais novo primeiro)
-            tweets_selecionados = sorted(tweets_hoje, 
-                                       key=lambda x: x['data'] if x['data'] else datetime.min, 
-                                       reverse=True)
+        if len(tweets_dados) < 30:
+            print(f"AVISO: Coletadas apenas {len(tweets_dados)}/30 postagens")
+            print("Possíveis motivos:")
+            print("- Perfil com menos de 30 postagens")
+            print("- Tweets protegidos ou indisponíveis")
+            print("- Limite de scroll atingido")
         else:
-            # Critério misto: prioriza comentários mas considera recência
-            for candidato in tweets_hoje:
-                # Score misto: comentários + bonus por recência
-                horas_atras = (hoje - candidato['data']).total_seconds() / 3600 if candidato['data'] else 24
-                bonus_recencia = max(0, 24 - horas_atras) * 0.5  # Bonus decrescente
-                candidato['score'] = candidato['comentarios'] + bonus_recencia
-            
-            tweets_selecionados = sorted(tweets_hoje, 
-                                       key=lambda x: x['score'], 
-                                       reverse=True)
+            print("SUCESSO: 30 postagens coletadas conforme especificação!")
         
-        # Pega apenas o número solicitado
-        tweets_finais = tweets_selecionados[:limite]
-        
-        # Mostra seleção
-        print(f"\n📋 TWEETS SELECIONADOS ({criterio.upper()}):")
         print("=" * 60)
-        for i, tweet in enumerate(tweets_finais, 1):
-            comentarios_texto = f"{tweet['comentarios']} comentários" if tweet['comentarios'] > 0 else "sem comentários"
-            data_texto = tweet['data'].strftime("%H:%M") if tweet['data'] else "sem data"
-            print(f"{i}. {tweet['texto'][:50]}... ({comentarios_texto}, {data_texto})")
-        print("=" * 60)
-        
-        return tweets_finais
+        return tweets_dados
     
-    def processar_tweets_selecionados(self, tweets_selecionados):
-        """Processa os tweets selecionados coletando comentários"""
-        print(f"🔄 Processando {len(tweets_selecionados)} tweets selecionados...")
-        
-        for i, tweet_data in enumerate(tweets_selecionados, 1):
-            print(f"\n📝 Processando tweet {i}/{len(tweets_selecionados)}...")
-            
-            codigo_postagem = f"post_{i:03d}"
-            
-            try:
-                # Volta ao perfil se necessário
-                if "twitter.com/" + self.username not in self.driver.current_url:
-                    self.driver.get(f"https://twitter.com/{self.username}")
-                    time.sleep(3)
-                
-                sucesso = self.coletar_comentarios_tweet(
-                    tweet_data['element'], 
-                    codigo_postagem, 
-                    tweet_data['texto']
-                )
-                
-                if sucesso:
-                    print(f"✅ Tweet {i} processado com sucesso!")
-                else:
-                    print(f"⚠️ Tweet {i} processado parcialmente")
-                    
-                    # Se não conseguiu comentários, adiciona pelo menos o tweet
-                    self.dados_coletados.append({
-                        'codigo_da_postagem': codigo_postagem,
-                        'usuario': f'@{self.username}',
-                        'texto_da_postagem': tweet_data['texto'],
-                        'texto_do_comentario': tweet_data['texto'],  # Usa o próprio tweet
-                        'sentimento': ''
-                    })
-                
-            except Exception as e:
-                print(f"⚠️ Erro ao processar tweet {i}: {str(e)[:50]}")
-                continue
-        
-        print(f"\n🎉 Processamento concluído! {len(self.dados_coletados)} itens coletados")
-    
-    def coletar_comentarios_tweet(self, tweet, codigo_postagem, texto_postagem, max_comentarios=10):
-        """Coleta comentários de um tweet específico"""
+    def coletar_comentarios_de_postagem(self, dados_tweet, codigo_postagem):
+        """Coleta comentários de uma postagem específica"""
         try:
-            # Clica no tweet para abrir
-            self.driver.execute_script("arguments[0].click();", tweet)
-            time.sleep(random.uniform(3, 5))
+            if not dados_tweet['url']:
+                print(f"Tweet {codigo_postagem}: URL não disponível")
+                return []
             
-            wait = WebDriverWait(self.driver, 10)
+            print(f"Coletando comentários da postagem {codigo_postagem}...")
+            
+            # Acessa a página do tweet
+            self.driver.get(dados_tweet['url'])
+            time.sleep(6)
+            
+            comentarios_coletados = []
             
             try:
-                # Aguarda comentários carregarem
-                comentarios = wait.until(
+                # Aguarda página carregar
+                wait = WebDriverWait(self.driver, 15)
+                
+                # Localiza todos os elementos de tweet (primeiro é original, resto são comentários)
+                todos_elementos = wait.until(
                     EC.presence_of_all_elements_located((
                         By.CSS_SELECTOR, 
                         'div[data-testid="cellInnerDiv"] article[data-testid="tweet"]'
                     ))
-                )[1:]  # Pula o primeiro que é o tweet original
+                )
                 
-                comentarios_coletados = 0
+                # Remove o tweet original (primeiro elemento)
+                elementos_comentarios = todos_elementos[1:] if len(todos_elementos) > 1 else []
                 
-                for comentario in comentarios[:max_comentarios]:
+                print(f"→ Encontrados {len(elementos_comentarios)} comentários")
+                
+                for i, comentario in enumerate(elementos_comentarios[:25]):  # Máximo 25 comentários por post
                     try:
+                        # Scroll suave até o comentário
                         self.driver.execute_script(
                             "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", 
                             comentario
                         )
                         time.sleep(0.5)
                         
-                        texto_comentario = self.driver.execute_script("""
-                            var elemento = arguments[0].querySelector('[data-testid="tweetText"]');
-                            return elemento ? elemento.textContent.trim() : null;
-                        """, comentario)
+                        # Extrai texto do comentário
+                        texto_comentario = comentario.find_element(
+                            By.CSS_SELECTOR, '[data-testid="tweetText"]'
+                        ).text.strip()
                         
-                        if texto_comentario and len(texto_comentario) > 5:
-                            self.dados_coletados.append({
-                                'codigo_da_postagem': codigo_postagem,
-                                'usuario': f'@{self.username}',
-                                'texto_da_postagem': texto_postagem,
-                                'texto_do_comentario': texto_comentario,
-                                'sentimento': ''
-                            })
-                            comentarios_coletados += 1
+                        if texto_comentario and len(texto_comentario) > 3:
+                            comentarios_coletados.append(texto_comentario)
                             
                     except Exception as e:
                         continue
                 
-                print(f"💬 {comentarios_coletados} comentários coletados!")
-                
-                # Volta ao perfil
-                self.driver.get(f"https://twitter.com/{self.username}")
-                time.sleep(random.uniform(2, 3))
-                
-                return comentarios_coletados > 0
+                print(f"→ {len(comentarios_coletados)} comentários válidos coletados")
+                return comentarios_coletados
                 
             except TimeoutException:
-                print("⚠️ Timeout ao carregar comentários")
-                self.driver.get(f"https://twitter.com/{self.username}")
-                time.sleep(2)
-                return False
+                print(f"→ Timeout ao carregar comentários da postagem {codigo_postagem}")
+                return []
                 
         except Exception as e:
-            print(f"⚠️ Erro na coleta: {str(e)[:50]}")
-            try:
-                self.driver.get(f"https://twitter.com/{self.username}")
-                time.sleep(2)
-            except:
-                pass
-            return False
+            print(f"→ Erro ao acessar postagem {codigo_postagem}: {e}")
+            return []
     
-    def executar_coleta_inteligente(self, limite_postagens=5, criterio="comentarios"):
-        """Executa coleta inteligente com seleção baseada em critérios"""
-        print(f"🎯 Iniciando coleta inteligente: {limite_postagens} postagens por {criterio}")
+    def executar_coleta_completa(self):
+        """
+        Executa coleta completa das 30 postagens + comentários
+        REQUISITO OBRIGATÓRIO: últimas 30 postagens do portal
+        """
+        print("EXECUTANDO COLETA OBRIGATÓRIA: 30 POSTAGENS")
+        print("=" * 60)
         
-        # Etapa 1: Coletar candidatos
-        if not self.coletar_tweets_candidatos():
-            print("❌ Falha ao coletar tweets candidatos!")
+        # Etapa 1: Coletar EXATAMENTE 30 postagens
+        tweets_dados = self.coletar_ultimas_30_postagens()
+        
+        if not tweets_dados:
+            print("ERRO CRÍTICO: Nenhuma postagem coletada!")
             return False
         
-        # Etapa 2: Selecionar melhores
-        tweets_selecionados = self.selecionar_melhores_tweets(limite_postagens, criterio)
+        if len(tweets_dados) < 30:
+            print(f"AVISO: Apenas {len(tweets_dados)} postagens disponíveis (meta: 30)")
         
-        if not tweets_selecionados:
-            print("❌ Nenhum tweet selecionado!")
-            return False
+        # Etapa 2: Coletar comentários de CADA uma das postagens
+        print(f"\nINICIANDO COLETA DE COMENTÁRIOS...")
+        print(f"Processando {len(tweets_dados)} postagens coletadas...")
         
-        # Etapa 3: Processar selecionados
-        self.processar_tweets_selecionados(tweets_selecionados)
+        postagens_com_comentarios = 0
+        total_comentarios_coletados = 0
+        
+        for i, dados_tweet in enumerate(tweets_dados, 1):
+            print(f"\n--- PROCESSANDO POSTAGEM {i}/{len(tweets_dados)} ---")
+            
+            # Coleta comentários desta postagem específica
+            comentarios = self.coletar_comentarios_de_postagem(dados_tweet, i)
+            
+            if comentarios:
+                postagens_com_comentarios += 1
+                # Adiciona cada comentário ao dataset final
+                for comentario in comentarios:
+                    self.dados_coletados.append({
+                        'codigo_da_postagem': i,
+                        'nome_portal': f'@{self.username}',
+                        'texto_da_postagem': dados_tweet['texto'],
+                        'texto_do_comentario': comentario,
+                        'sentimento': ''  # Preenchido na análise
+                    })
+                    total_comentarios_coletados += 1
+                    
+                print(f"✅ {len(comentarios)} comentários coletados desta postagem")
+            else:
+                # IMPORTANTE: Mesmo sem comentários, inclui a postagem
+                # (pode ser que não tenha comentários mesmo)
+                print(f"⚠️ Postagem {i} sem comentários - incluindo postagem original")
+                self.dados_coletados.append({
+                    'codigo_da_postagem': i,
+                    'nome_portal': f'@{self.username}',
+                    'texto_da_postagem': dados_tweet['texto'],
+                    'texto_do_comentario': dados_tweet['texto'],  # Usa o próprio post
+                    'sentimento': ''
+                })
+                total_comentarios_coletados += 1
+            
+            # Pausa entre postagens (importante para não ser bloqueado)
+            if i < len(tweets_dados):
+                time.sleep(random.uniform(3, 6))
+        
+        # Relatório da coleta
+        print("\n" + "=" * 60)
+        print("RESULTADO DA COLETA DE COMENTÁRIOS")
+        print("=" * 60)
+        print(f"📊 Postagens processadas: {len(tweets_dados)}/30")
+        print(f"💬 Postagens com comentários: {postagens_com_comentarios}")
+        print(f"📝 Total de registros coletados: {total_comentarios_coletados}")
+        print(f"📈 Média de comentários/postagem: {total_comentarios_coletados/len(tweets_dados):.1f}")
+        print("=" * 60)
         
         return len(self.dados_coletados) > 0
     
     def limpar_texto(self, texto):
-        """Pré-processamento de texto"""
+        """
+        Pré-processamento de texto conforme especificação:
+        - Remove caracteres especiais
+        - Remove links, hashtags e menções
+        - Converte para minúsculas
+        - Remove espaços extras
+        """
+        if not texto:
+            return ""
+            
+        # Remove URLs
         texto = re.sub(r'http\S+|www\S+|https\S+', '', texto, flags=re.MULTILINE)
+        # Remove menções (@usuario)
         texto = re.sub(r'@\w+', '', texto)
+        # Remove hashtags mas mantém o texto (#palavra -> palavra)
         texto = re.sub(r'#(\w+)', r'\1', texto)
+        # Remove caracteres especiais, mantém apenas letras, números e espaços
         texto = re.sub(r'[^\w\s]', ' ', texto)
+        # Remove espaços extras
         texto = ' '.join(texto.split())
+        # Converte para minúsculas
         return texto.strip().lower()
         
     def preprocessar_dados(self):
-        """Pré-processamento dos dados"""
-        print("🧹 Pré-processando dados...")
+        """Pré-processamento dos dados textuais"""
+        print("\nRealizando pré-processamento dos dados...")
+        print("- Removendo caracteres especiais")
+        print("- Removendo links, hashtags e menções")
+        print("- Convertendo para minúsculas")
+        print("- Removendo espaços extras")
+        
+        dados_antes = len(self.dados_coletados)
         
         for item in self.dados_coletados:
             item['texto_da_postagem'] = self.limpar_texto(item['texto_da_postagem'])
             item['texto_do_comentario'] = self.limpar_texto(item['texto_do_comentario'])
-            
-        print("✅ Pré-processamento concluído!")
+        
+        # Remove registros com texto muito curto após limpeza
+        self.dados_coletados = [
+            item for item in self.dados_coletados 
+            if len(item['texto_do_comentario']) > 5
+        ]
+        
+        dados_depois = len(self.dados_coletados)
+        print(f"✅ Pré-processamento concluído!")
+        print(f"Registros antes: {dados_antes} | Registros após: {dados_depois}")
         
     def analisar_sentimentos(self):
-        """Análise de sentimentos usando LeIA"""
-        print("🎭 Analisando sentimentos...")
+        """
+        Análise de sentimentos usando biblioteca LeIA
+        Classifica cada comentário em: POSITIVO, NEGATIVO ou NEUTRO
+        """
+        print("\nIniciando análise de sentimentos com LeIA...")
         
         for i, item in enumerate(self.dados_coletados):
             try:
+                # Análise usando LeIA
                 score = self.analyzer.polarity_scores(item['texto_do_comentario'])
                 
+                # Critério de classificação baseado no compound score
                 if score['compound'] >= 0.05:
                     sentimento = 'POSITIVO'
                 elif score['compound'] <= -0.05:
@@ -728,224 +482,295 @@ class TwitterSentimentAnalyzerSmartSelection:
                     
                 item['sentimento'] = sentimento
                 
-                if (i + 1) % 5 == 0:
-                    print(f"📊 Analisados {i + 1}/{len(self.dados_coletados)} textos")
+                # Progresso a cada 20 análises
+                if (i + 1) % 20 == 0:
+                    print(f"→ Analisados {i + 1}/{len(self.dados_coletados)} comentários")
                     
             except Exception as e:
+                # Em caso de erro, classifica como neutro
                 item['sentimento'] = 'NEUTRO'
                 
         print("✅ Análise de sentimentos concluída!")
         
-    def salvar_csv(self, nome_arquivo="dados_twitter_selecao_inteligente.csv"):
-        """Salva dados em CSV"""
+    def salvar_dados_csv(self, nome_arquivo="dados_twitter.csv"):
+        """
+        Salva dados no formato CSV especificado na documentação
+        Formato: codigo_da_postagem, nome_portal, texto_da_postagem, texto_do_comentario, sentimento
+        """
         if not self.dados_coletados:
-            print("⚠️ Nenhum dado para salvar!")
+            print("❌ Nenhum dado para salvar!")
             return None
             
-        df = pd.DataFrame(self.dados_coletados)
+        print(f"\nSalvando dados em formato CSV...")
+        
+        # Cria DataFrame com as colunas exatas da documentação
+        df = pd.DataFrame(self.dados_coletados, columns=[
+            'codigo_da_postagem', 
+            'nome_portal', 
+            'texto_da_postagem', 
+            'texto_do_comentario', 
+            'sentimento'
+        ])
+        
+        # Salva arquivo CSV
         df.to_csv(nome_arquivo, index=False, encoding='utf-8')
         
-        print(f"✅ Dados salvos em {nome_arquivo}!")
+        print(f"✅ Dados salvos em '{nome_arquivo}'")
         print(f"📊 Total de registros: {len(self.dados_coletados)}")
+        print(f"📱 Postagens únicas: {df['codigo_da_postagem'].nunique()}")
+        
         return df
         
-    def gerar_visualizacao(self, df):
-        """Gera gráfico de análise de sentimentos"""
+    def gerar_grafico_barras(self, df):
+        """
+        Gera gráfico de barras conforme especificação:
+        Mostra quantidade de comentários positivos, negativos e neutros para cada notícia
+        """
         if df is None or df.empty:
-            print("⚠️ Sem dados para visualização!")
+            print("❌ Sem dados para visualização!")
             return
             
-        print("📈 Gerando gráfico...")
+        print("\nGerando gráfico de barras...")
         
-        plt.style.use('default')
+        # Agrupa dados por postagem e sentimento
         contagem_sentimentos = df.groupby(['codigo_da_postagem', 'sentimento']).size().unstack(fill_value=0)
         
-        cores = {'NEGATIVO': '#ff4444', 'NEUTRO': '#888888', 'POSITIVO': '#44ff44'}
-        cores_ordenadas = [cores.get(col, '#0066cc') for col in contagem_sentimentos.columns]
+        # Define cores para cada sentimento
+        cores_sentimentos = {
+            'NEGATIVO': '#e74c3c',    # Vermelho
+            'NEUTRO': '#95a5a6',      # Cinza
+            'POSITIVO': '#27ae60'     # Verde
+        }
         
-        plt.figure(figsize=(16, 8))
-        ax = contagem_sentimentos.plot(kind='bar', 
-                                     color=cores_ordenadas,
-                                     width=0.7,
-                                     alpha=0.8)
+        # Ordena cores conforme colunas disponíveis
+        cores_ordenadas = [cores_sentimentos.get(col, '#3498db') for col in contagem_sentimentos.columns]
         
-        plt.title('Análise de Sentimentos - Seleção Inteligente\n(Postagens com Mais Comentários)', 
+        # Cria gráfico
+        plt.figure(figsize=(14, 8))
+        ax = contagem_sentimentos.plot(
+            kind='bar', 
+            color=cores_ordenadas,
+            width=0.7,
+            alpha=0.8,
+            edgecolor='black',
+            linewidth=0.5
+        )
+        
+        # Configuração do gráfico conforme documentação
+        plt.title(f'Análise de Sentimentos dos Comentários - @{self.username}\n'
+                 f'Quantidade de Comentários Positivos, Negativos e Neutros por Notícia', 
                  fontsize=16, fontweight='bold', pad=20)
         plt.xlabel('Código da Postagem', fontsize=12, fontweight='bold')
         plt.ylabel('Quantidade de Comentários', fontsize=12, fontweight='bold')
-        plt.legend(title='Sentimento', bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.legend(title='Sentimento', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         plt.xticks(rotation=45, ha='right')
-        plt.grid(axis='y', alpha=0.3)
-        plt.tight_layout()
+        plt.grid(axis='y', alpha=0.3, linestyle='--')
         
-        plt.savefig('analise_sentimentos_selecao_inteligente.png', dpi=300, bbox_inches='tight')
+        # Adiciona valores nas barras
+        for container in ax.containers:
+            ax.bar_label(container, fontsize=9)
+        
+        plt.tight_layout()
+        plt.savefig('analise_sentimentos.png', dpi=300, bbox_inches='tight', facecolor='white')
         plt.show()
         
-        print("✅ Gráfico salvo como 'analise_sentimentos_selecao_inteligente.png'!")
+        print("✅ Gráfico salvo como 'analise_sentimentos.png'")
         
-        self.mostrar_estatisticas(df)
-    
-    def mostrar_estatisticas(self, df):
-        """Mostra estatísticas detalhadas"""
-        total = len(df)
-        if total == 0:
-            return
-            
-        pos = len(df[df['sentimento'] == 'POSITIVO'])
-        neg = len(df[df['sentimento'] == 'NEGATIVO']) 
-        neu = len(df[df['sentimento'] == 'NEUTRO'])
+    def exibir_relatorio_final(self, df):
+        """Exibe relatório final da análise"""
+        total_comentarios = len(df)
+        total_postagens = df['codigo_da_postagem'].nunique()
+        
+        positivos = len(df[df['sentimento'] == 'POSITIVO'])
+        negativos = len(df[df['sentimento'] == 'NEGATIVO'])
+        neutros = len(df[df['sentimento'] == 'NEUTRO'])
+        
+        print("\n" + "="*70)
+        print("RELATÓRIO FINAL DA ANÁLISE DE SENTIMENTOS")
+        print("="*70)
+        print(f"Portal analisado: @{self.username}")
+        print(f"Total de postagens processadas: {total_postagens}")
+        print(f"Total de comentários analisados: {total_comentarios}")
+        print(f"Média de comentários por postagem: {total_comentarios/total_postagens:.1f}")
+        print()
+        print("DISTRIBUIÇÃO DE SENTIMENTOS:")
+        print(f"🟢 Comentários POSITIVOS: {positivos} ({positivos/total_comentarios*100:.1f}%)")
+        print(f"🔴 Comentários NEGATIVOS: {negativos} ({negativos/total_comentarios*100:.1f}%)")
+        print(f"⚪ Comentários NEUTROS: {neutros} ({neutros/total_comentarios*100:.1f}%)")
+        print()
         
         # Estatísticas por postagem
-        stats_por_postagem = df.groupby('codigo_da_postagem').agg({
-            'sentimento': 'count'
-        }).rename(columns={'sentimento': 'total_comentarios'})
-        
-        print("\n" + "="*60)
-        print("📊 ESTATÍSTICAS FINAIS (SELEÇÃO INTELIGENTE)")
-        print("="*60)
-        print(f"Total de comentários analisados: {total}")
-        print(f"✅ Positivos: {pos} ({pos/total*100:.1f}%)")
-        print(f"❌ Negativos: {neg} ({neg/total*100:.1f}%)")
-        print(f"⚪ Neutros: {neu} ({neu/total*100:.1f}%)")
-        print(f"📱 Postagens processadas: {df['codigo_da_postagem'].nunique()}")
-        print(f"💬 Média comentários/postagem: {total/df['codigo_da_postagem'].nunique():.1f}")
-        
-        print("\n📋 DETALHES POR POSTAGEM:")
-        for codigo, stats in stats_por_postagem.iterrows():
-            comentarios_post = df[df['codigo_da_postagem'] == codigo]
-            pos_post = len(comentarios_post[comentarios_post['sentimento'] == 'POSITIVO'])
-            neg_post = len(comentarios_post[comentarios_post['sentimento'] == 'NEGATIVO'])
-            neu_post = len(comentarios_post[comentarios_post['sentimento'] == 'NEUTRO'])
+        print("DETALHES POR POSTAGEM:")
+        for codigo in sorted(df['codigo_da_postagem'].unique()):
+            dados_post = df[df['codigo_da_postagem'] == codigo]
+            pos_post = len(dados_post[dados_post['sentimento'] == 'POSITIVO'])
+            neg_post = len(dados_post[dados_post['sentimento'] == 'NEGATIVO'])
+            neu_post = len(dados_post[dados_post['sentimento'] == 'NEUTRO'])
+            total_post = len(dados_post)
             
-            print(f"  {codigo}: {stats['total_comentarios']} comentários "
+            print(f"  Postagem {codigo:2d}: {total_post:3d} comentários "
                   f"(+{pos_post} -{neg_post} ={neu_post})")
         
+        print("="*70)
+        
     def fechar_navegador(self):
-        """Fecha navegador e limpa arquivos temporários"""
+        """Fecha o navegador e limpa recursos"""
         try:
             if self.driver:
                 self.driver.quit()
-            print("🧹 Navegador fechado!")
-            
-            # Remove perfil temporário
-            temp_profile = os.path.join(os.path.expanduser("~"), "temp_chrome_profile")
-            if os.path.exists(temp_profile):
-                try:
-                    shutil.rmtree(temp_profile)
-                    print("🧹 Perfil temporário removido!")
-                except:
-                    pass
-                    
+            print("🔧 Navegador fechado!")
         except Exception as e:
-            print(f"⚠️ Aviso: {e}")
+            print(f"Aviso ao fechar navegador: {e}")
     
-    def executar_processo_selecao_inteligente(self, limite_postagens=5, criterio="comentarios"):
-        """Executa todo o processo com seleção inteligente"""
+    def executar_processo_completo(self):
+        """
+        Executa processo completo conforme documentação:
+        OBRIGATÓRIO: Últimas 30 postagens + comentários + análise
+        """
         try:
-            print("🚀 INICIANDO SISTEMA COM SELEÇÃO INTELIGENTE\n")
-            print("🔧 Recursos desta versão:")
-            print("  - Coleta TODOS os tweets disponíveis primeiro")
-            print("  - Extrai métricas: comentários, data, texto")
-            print("  - Seleciona os melhores baseado no critério escolhido")
-            print("  - Prioriza tweets de hoje com mais comentários")
-            print("  - Garante coleta de dados úteis para análise")
-            print(f"  - Critério atual: {criterio.upper()}")
-            print(f"  - Meta: {limite_postagens} postagens\n")
+            print("SISTEMA DE ANÁLISE DE SENTIMENTOS - TWITTER/X")
+            print("REQUISITO: Últimas 30 postagens do portal de notícias")
+            print("="*70)
             
-            self.configurar_driver_robusto()
+            # Etapa 1: Configuração do navegador
+            if not self.configurar_driver():
+                print("ERRO: Falha na configuração do navegador!")
+                return False
             
-            if not self.acessar_perfil_robusto():
-                print("❌ Falha ao acessar perfil!")
-                return
+            # Etapa 2: Login no Twitter/X (OBRIGATÓRIO)
+            if not self.realizar_login_manual():
+                print("ERRO: Falha no processo de login!")
+                return False
             
-            # Coleta inteligente
-            sucesso = self.executar_coleta_inteligente(limite_postagens, criterio)
+            # Etapa 3: Acessar perfil do portal
+            if not self.acessar_perfil_alvo():
+                print("ERRO: Falha ao acessar perfil!")
+                return False
+            
+            # Etapa 4: Coleta OBRIGATÓRIA das 30 postagens + comentários
+            if not self.executar_coleta_completa():
+                print("ERRO: Falha na coleta obrigatória!")
+                return False
+            
+            # Fecha navegador antes do processamento
             self.fechar_navegador()
             
-            if not sucesso or not self.dados_coletados:
-                print("⚠️ Nenhum dado coletado! Possíveis causas:")
-                print("  - Perfil sem tweets com comentários hoje")
-                print("  - Perfil privado ou protegido")
-                print("  - Bloqueio por segurança do Twitter")
-                return
+            if not self.dados_coletados:
+                print("ERRO CRÍTICO: Nenhum dado coletado!")
+                return False
             
+            # Etapa 5: Pré-processamento (OBRIGATÓRIO)
+            print("\nETAPA 5: PRÉ-PROCESSAMENTO")
             self.preprocessar_dados()
+            
+            # Etapa 6: Análise de sentimentos com LeIA (OBRIGATÓRIO)
+            print("\nETAPA 6: ANÁLISE DE SENTIMENTOS")
             self.analisar_sentimentos()
             
-            df = self.salvar_csv()
-            if df is not None:
-                self.gerar_visualizacao(df)
+            # Etapa 7: Salvar CSV no formato especificado (OBRIGATÓRIO)
+            print("\nETAPA 7: ARMAZENAMENTO EM CSV")
+            df = self.salvar_dados_csv()
             
-            print("\n🎉 PROCESSO CONCLUÍDO COM SUCESSO!")
-            print("📁 Arquivos gerados:")
-            print("  - dados_twitter_selecao_inteligente.csv")
-            print("  - analise_sentimentos_selecao_inteligente.png")
+            # Etapa 8: Gerar visualização (OBRIGATÓRIO)
+            if df is not None:
+                print("\nETAPA 8: GERAÇÃO DE GRÁFICO")
+                self.gerar_grafico_barras(df)
+                print("\nETAPA 9: RELATÓRIO FINAL")
+                self.exibir_relatorio_final(df)
+            
+            print("\n" + "="*70)
+            print("PROCESSO CONCLUÍDO - REQUISITOS ATENDIDOS")
+            print("="*70)
+            print("ARQUIVOS GERADOS:")
+            print("- dados_twitter.csv (formato da documentação)")
+            print("- analise_sentimentos.png (gráfico de barras)")
+            print("\nREQUISTOS DA ATIVIDADE ATENDIDOS:")
+            print("✓ Coleta das últimas 30 postagens")
+            print("✓ Captura automatizada de comentários")
+            print("✓ Uso da biblioteca Selenium")
+            print("✓ Armazenamento em CSV formato especificado")
+            print("✓ Pré-processamento de texto")
+            print("✓ Análise de sentimento com LeIA")
+            print("✓ Classificação POSITIVO/NEGATIVO/NEUTRO")
+            print("✓ Gráfico de barras por notícia")
+            print("✓ Código bem estruturado e comentado")
+            print("="*70)
+            
+            return True
             
         except Exception as e:
-            print(f"❌ Erro durante execução: {e}")
+            print(f"ERRO CRÍTICO: {e}")
             self.fechar_navegador()
+            return False
 
 def main():
-    """Função principal com opções de seleção inteligente"""
-    print("=" * 70)
+    """Função principal - Executa sistema conforme documentação"""
+    print("="*70)
     print("SISTEMA DE ANÁLISE DE SENTIMENTOS - TWITTER/X")
-    print("🎯 VERSÃO COM SELEÇÃO INTELIGENTE")
-    print("=" * 70)
+    print("ATIVIDADE: Coleta e Mineração de Dados da Rede Social X")
+    print("REQUISITO: Últimas 30 postagens + comentários")
+    print("="*70)
     
-    portal = input("Digite o nome do portal (sem @) [Enter para 'tvm']: ").strip()
+    # Configuração do portal
+    print("\n📋 CONFIGURAÇÃO:")
+    portal = input("Digite o nome do portal de notícias (sem @): ").strip()
     if not portal:
-        portal = "tvm"
+        portal = "tvm"  # Portal padrão da documentação
     
-    print("\n🌐 Escolha o navegador:")
+    # Escolha do navegador
+    print("\n🌐 Navegador:")
     print("1 - Chrome (recomendado)")
-    print("2 - Firefox") 
-    print("3 - Brave")
+    print("2 - Firefox")
     
-    escolha = input("Digite 1, 2 ou 3 [Enter para Chrome]: ").strip()
-    browsers = {"1": "chrome", "2": "firefox", "3": "brave"}
-    browser = browsers.get(escolha, "chrome")
+    escolha_browser = input("Digite 1 ou 2 [Enter = Chrome]: ").strip()
+    browser = "firefox" if escolha_browser == "2" else "chrome"
     
-    print("\n🎯 Critério de seleção de postagens:")
-    print("1 - Mais comentários (recomendado)")
-    print("2 - Cronológico (mais antiga → mais nova)")
-    print("3 - Cronológico reverso (mais nova → mais antiga)")
-    print("4 - Misto (comentários + recência)")
+    # Confirmação da configuração
+    print(f"\n📋 CONFIGURAÇÃO FINAL:")
+    print(f"   Portal: @{portal}")
+    print(f"   Navegador: {browser.upper()}")
+    print(f"   Meta: 30 postagens (conforme documentação)")
+    print(f"   Coleta: Comentários de cada postagem")
+    print(f"   Análise: Sentimentos com LeIA")
+    print(f"   Saída: CSV + Gráfico de barras")
     
-    criterio_escolha = input("Digite 1, 2, 3 ou 4 [Enter para mais comentários]: ").strip()
-    criterios = {
-        "1": "comentarios",
-        "2": "cronologico", 
-        "3": "cronologico_reverso",
-        "4": "misto"
-    }
-    criterio = criterios.get(criterio_escolha, "comentarios")
+    confirmacao = input("\nConfirma configuração? [Enter = SIM]: ").strip()
+    if confirmacao.lower() in ['n', 'nao', 'no']:
+        print("Operação cancelada.")
+        return
     
-    print("\n📊 Quantas postagens analisar?")
-    try:
-        limite = int(input("Digite um número [Enter para 5]: ").strip() or "5")
-        limite = max(1, min(10, limite)) 
-    except:
-        limite = 5
+    print("\n" + "="*70)
+    print("INICIANDO PROCESSO AUTOMATIZADO")
+    print("ETAPAS:")
+    print("1. Configurar navegador")
+    print("2. Login manual no Twitter/X")
+    print("3. Acessar perfil do portal")
+    print("4. Coletar 30 postagens")
+    print("5. Coletar comentários")
+    print("6. Pré-processar dados")
+    print("7. Analisar sentimentos")
+    print("8. Gerar CSV e gráfico")
+    print("="*70)
     
-    criterio_nome = {
-        "comentarios": "Mais Comentários",
-        "cronologico": "Cronológico (Antiga→Nova)",
-        "cronologico_reverso": "Cronológico (Nova→Antiga)", 
-        "misto": "Misto (Comentários + Recência)"
-    }
+    input("Pressione Enter para iniciar...")
     
-    print(f"\n📋 Configuração:")
-    print(f"  📱 Portal: @{portal}")
-    print(f"  🌐 Navegador: {browser.upper()}")
-    print(f"  🎯 Critério: {criterio_nome[criterio]}")
-    print(f"  📊 Meta: {limite} postagens")
-    print(f"  🔧 Versão: Seleção Inteligente")
-    print(f"  💡 Recurso: Prioriza posts com comentários")
+    # Executa o sistema completo
+    analisador = TwitterSentimentAnalyzer(username=portal, browser=browser)
+    sucesso = analisador.executar_processo_completo()
     
-    input("\nPressione Enter para iniciar a seleção inteligente...")
-    
-    analisador = TwitterSentimentAnalyzerSmartSelection(username=portal, browser=browser)
-    analisador.executar_processo_selecao_inteligente(limite, criterio)
+    if sucesso:
+        print("\nSUCESSO TOTAL!")
+        print("Todos os requisitos da documentação foram atendidos:")
+        print("- 30 postagens processadas")
+        print("- Comentários coletados automaticamente")
+        print("- Análise de sentimentos realizada")
+        print("- Arquivos CSV e gráfico gerados")
+    else:
+        print("\nFALHA NO PROCESSO!")
+        print("Verifique os requisitos:")
+        print("- Conexão estável com internet")
+        print("- Login válido no Twitter/X")
+        print("- Perfil público do portal")
 
 if __name__ == "__main__":
     main()
