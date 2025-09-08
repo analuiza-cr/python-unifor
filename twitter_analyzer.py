@@ -21,7 +21,6 @@ import random
 class TwitterSentimentAnalyzer:
     """
     Sistema de coleta e análise de sentimentos do Twitter/X
-    Conforme especificações da atividade acadêmica
     """
     
     def __init__(self, username="tvm", browser="chrome"):
@@ -234,7 +233,7 @@ class TwitterSentimentAnalyzer:
                 else:
                     scrolls_sem_novos_tweets = 0
                 
-                # Scroll para carregar mais tweets (OBRIGATÓRIO para 30 posts)
+                # Scroll para carregar mais tweets
                 if len(tweets_dados) < 30:
                     print(f"Scroll {scrolls_realizados + 1} - Coletados {len(tweets_dados)}/30")
                     
@@ -556,7 +555,7 @@ class TwitterSentimentAnalyzer:
             linewidth=0.5
         )
         
-        # Configuração do gráfico conforme documentação
+        # Configuração do gráfico
         plt.title(f'Análise de Sentimentos dos Comentários - @{self.username}\n'
                  f'Quantidade de Comentários Positivos, Negativos e Neutros por Notícia', 
                  fontsize=16, fontweight='bold', pad=20)
@@ -624,7 +623,7 @@ class TwitterSentimentAnalyzer:
     
     def executar_processo_completo(self):
         """
-        Executa processo completo conforme documentação:
+        Executa processo completo:
         OBRIGATÓRIO: Últimas 30 postagens + comentários + análise
         """
         try:
@@ -637,7 +636,7 @@ class TwitterSentimentAnalyzer:
                 print("ERRO: Falha na configuração do navegador!")
                 return False
             
-            # Etapa 2: Login no Twitter/X (OBRIGATÓRIO)
+            # Etapa 2: Login no Twitter/X
             if not self.realizar_login_manual():
                 print("ERRO: Falha no processo de login!")
                 return False
@@ -647,7 +646,7 @@ class TwitterSentimentAnalyzer:
                 print("ERRO: Falha ao acessar perfil!")
                 return False
             
-            # Etapa 4: Coleta OBRIGATÓRIA das 30 postagens + comentários
+            # Etapa 4: Coleta das 30 postagens + comentários
             if not self.executar_coleta_completa():
                 print("ERRO: Falha na coleta obrigatória!")
                 return False
@@ -659,19 +658,19 @@ class TwitterSentimentAnalyzer:
                 print("ERRO CRÍTICO: Nenhum dado coletado!")
                 return False
             
-            # Etapa 5: Pré-processamento (OBRIGATÓRIO)
+            # Etapa 5: Pré-processamento
             print("\nETAPA 5: PRÉ-PROCESSAMENTO")
             self.preprocessar_dados()
             
-            # Etapa 6: Análise de sentimentos com LeIA (OBRIGATÓRIO)
+            # Etapa 6: Análise de sentimentos com LeIA
             print("\nETAPA 6: ANÁLISE DE SENTIMENTOS")
             self.analisar_sentimentos()
             
-            # Etapa 7: Salvar CSV no formato especificado (OBRIGATÓRIO)
+            # Etapa 7: Salvar CSV no formato especificado
             print("\nETAPA 7: ARMAZENAMENTO EM CSV")
             df = self.salvar_dados_csv()
             
-            # Etapa 8: Gerar visualização (OBRIGATÓRIO)
+            # Etapa 8: Gerar visualização
             if df is not None:
                 print("\nETAPA 8: GERAÇÃO DE GRÁFICO")
                 self.gerar_grafico_barras(df)
