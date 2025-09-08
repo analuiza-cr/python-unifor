@@ -21,7 +21,6 @@ import random
 class TwitterSentimentAnalyzer:
     """
     Sistema de coleta e análise de sentimentos do Twitter/X
-    Conforme especificações da atividade acadêmica
     """
     
     def __init__(self, username="tvm", browser="chrome"):
@@ -193,7 +192,7 @@ class TwitterSentimentAnalyzer:
             return None
     
     def coletar_ultimas_30_postagens(self):
-        """Coleta EXATAMENTE as últimas 30 postagens conforme documentação"""
+        """Coleta exatamente as últimas 30 postagens"""
         print("COLETANDO ÚLTIMAS 30 POSTAGENS - REQUISITO OBRIGATÓRIO")
         print("=" * 60)
         
@@ -234,7 +233,7 @@ class TwitterSentimentAnalyzer:
                 else:
                     scrolls_sem_novos_tweets = 0
                 
-                # Scroll para carregar mais tweets (OBRIGATÓRIO para 30 posts)
+                # Scroll para carregar mais tweets
                 if len(tweets_dados) < 30:
                     print(f"Scroll {scrolls_realizados + 1} - Coletados {len(tweets_dados)}/30")
                     
@@ -341,12 +340,11 @@ class TwitterSentimentAnalyzer:
     def executar_coleta_completa(self):
         """
         Executa coleta completa das 30 postagens + comentários
-        REQUISITO OBRIGATÓRIO: últimas 30 postagens do portal
         """
         print("EXECUTANDO COLETA OBRIGATÓRIA: 30 POSTAGENS")
         print("=" * 60)
         
-        # Etapa 1: Coletar EXATAMENTE 30 postagens
+        # Etapa 1: Coletar exatamente 30 postagens
         tweets_dados = self.coletar_ultimas_30_postagens()
         
         if not tweets_dados:
@@ -356,7 +354,7 @@ class TwitterSentimentAnalyzer:
         if len(tweets_dados) < 30:
             print(f"AVISO: Apenas {len(tweets_dados)} postagens disponíveis (meta: 30)")
         
-        # Etapa 2: Coletar comentários de CADA uma das postagens
+        # Etapa 2: Coletar comentários de cada uma das postagens
         print(f"\nINICIANDO COLETA DE COMENTÁRIOS...")
         print(f"Processando {len(tweets_dados)} postagens coletadas...")
         
@@ -494,7 +492,7 @@ class TwitterSentimentAnalyzer:
         
     def salvar_dados_csv(self, nome_arquivo="dados_twitter.csv"):
         """
-        Salva dados no formato CSV especificado na documentação
+        Salva dados no formato CSV
         Formato: codigo_da_postagem, nome_portal, texto_da_postagem, texto_do_comentario, sentimento
         """
         if not self.dados_coletados:
@@ -556,7 +554,7 @@ class TwitterSentimentAnalyzer:
             linewidth=0.5
         )
         
-        # Configuração do gráfico conforme documentação
+        # Configuração do gráfico
         plt.title(f'Análise de Sentimentos dos Comentários - @{self.username}\n'
                  f'Quantidade de Comentários Positivos, Negativos e Neutros por Notícia', 
                  fontsize=16, fontweight='bold', pad=20)
@@ -623,10 +621,7 @@ class TwitterSentimentAnalyzer:
             print(f"Aviso ao fechar navegador: {e}")
     
     def executar_processo_completo(self):
-        """
-        Executa processo completo conforme documentação:
-        OBRIGATÓRIO: Últimas 30 postagens + comentários + análise
-        """
+       
         try:
             print("SISTEMA DE ANÁLISE DE SENTIMENTOS - TWITTER/X")
             print("REQUISITO: Últimas 30 postagens do portal de notícias")
@@ -637,7 +632,7 @@ class TwitterSentimentAnalyzer:
                 print("ERRO: Falha na configuração do navegador!")
                 return False
             
-            # Etapa 2: Login no Twitter/X (OBRIGATÓRIO)
+            # Etapa 2: Login no Twitter/X
             if not self.realizar_login_manual():
                 print("ERRO: Falha no processo de login!")
                 return False
@@ -659,19 +654,19 @@ class TwitterSentimentAnalyzer:
                 print("ERRO CRÍTICO: Nenhum dado coletado!")
                 return False
             
-            # Etapa 5: Pré-processamento (OBRIGATÓRIO)
+            # Etapa 5: Pré-processamento
             print("\nETAPA 5: PRÉ-PROCESSAMENTO")
             self.preprocessar_dados()
             
-            # Etapa 6: Análise de sentimentos com LeIA (OBRIGATÓRIO)
+            # Etapa 6: Análise de sentimentos com LeIA
             print("\nETAPA 6: ANÁLISE DE SENTIMENTOS")
             self.analisar_sentimentos()
             
-            # Etapa 7: Salvar CSV no formato especificado (OBRIGATÓRIO)
+            # Etapa 7: Salvar CSV no formato especificado
             print("\nETAPA 7: ARMAZENAMENTO EM CSV")
             df = self.salvar_dados_csv()
             
-            # Etapa 8: Gerar visualização (OBRIGATÓRIO)
+            # Etapa 8: Gerar visualização
             if df is not None:
                 print("\nETAPA 8: GERAÇÃO DE GRÁFICO")
                 self.gerar_grafico_barras(df)
